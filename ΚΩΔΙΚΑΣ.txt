@@ -1,0 +1,125 @@
+     ## PROEPEKSERGASIA DEDOMENWN NAR_DYNAMIC 
+
+nari_dynamic = pd.read_csv('/home/christos/Master/Data Management in SQL and NoSQL DBs/DataSet/[P1] AIS Data/nari_dynamic.csv', low_memory=False, nrows=10000)
+nari_dynamic_cleaned = nari_dynamic[["sourcemmsi", "speedoverground", "lon", "lat"]]
+nari_dynamic_cleaned.to_csv(r'/home/christos/Master/Data Management in SQL and NoSQL DBs/DataSet/[P1] AIS Data/aisdata_nari_dynamic_cleaned.csv')
+
+     ## PROEPEKSERGASIA DEDOMENWN NARI_DYNAMIC_SAR 
+
+nari_dynamic_sar = pd.read_csv('/home/christos/Master/Data Management in SQL and NoSQL DBs/DataSet/[P1] AIS Data/nari_dynamic_sar.csv', low_memory=False, nrows= 4566)
+nari_dynamic_sar_new = nari_dynamic_sar[["sourcemmsi", "speedoverground", "ts"]]
+ts_toDateTime = pd.to_datetime(nari_dynamic_sar_new["ts"], unit='s')
+nari_dynamic_sar_new["ts"] = ts_toDateTime
+nari_dynamic_sar_cleaned = nari_dynamic_sar_new[["sourcemmsi", "speedoverground", "ts"]]
+nari_dynamic_sar_cleaned.to_csv(r'/home/christos/Master/Data Management in SQL and NoSQL DBs/DataSet/[P1] AIS Data/aisdata_nari_dynamic_sar_cleaned.csv')
+
+     ## PROEPEKSERGASIA DEDOMENWN NARI_STATIC 
+
+nari_static = pd.read_csv('/home/christos/Master/Data Management in SQL and NoSQL DBs/DataSet/[P1] AIS Data/nari_static.csv', low_memory=False, nrows=660423)
+nari_static_new = nari_static[["sourcemmsi", "shipname", "shiptype", "tobow", "tostern", "destination"]]
+nari_static_new_drop = nari_static_new.dropna()
+filled = []
+def cleaned(col):
+    for c in col:
+        if c != " ":
+            filled.append(c)
+        elif c == " ":
+            c = np.nan
+            filled.append(c)
+cleaned(nari_static_new_drop["destination"])
+nari_static_new_drop['destination'] = filled
+nari_static_cleaned = nari_static_new_drop.dropna()
+nari_static_cleaned.to_csv(r'/home/christos/Master/Data Management in SQL and NoSQL DBs/DataSet/[P1] AIS Data/aisdata_nari_static_cleaned.csv')
+
+     ## APOTHIKEUSI-FORTWSI DEDOMENWN STI VASI 
+
+mongoimport --db aisdata --collection nari_dynamic --type csv --file     C:\aisdata_nari_dynamic_cleaned.csv  --headerline
+mongoimport --db aisdata --collection nari_dynamic_sar --type csv --file     C:\aisdata_nari_dynamic_sar_cleaned.csv --headerline
+mongoimport --db aisdata --collection nari_static --type csv --file     C:\aisdata_nari_static_cleaned.csv --headerline
+
+     ## EURESI MESIS TAXYTITAS SKAFWN
+show dbs
+use aisdata
+db.nari_dynamic.aggregate ( [ { $group: { _id: null, avgspeed: {$avg: "$speedoverground" }}}])
+
+
+     ##  EYRESI TWN 2 PRWTWN SKAFWN ME TI MEGALYTERI TAXYTITA 
+
+db.nari_dynamic.find().sort({"speedoverground" :-1}).limit(2).pretty()  
+
+     ## EURESI STOIXEIWN SKAFOUS ME TI MEGALITERI TAXYTITA (GNWRIZONTAS TO "_ID" TOU APO TO PROIGOUMENO QUERY
+
+db.nari_dynamic.aggregate ( [ { $ match: { "": 9803}},
+                              { $ lookup: { from: "nari_static", localField: "sourcemmsi", foreignField: "sourcemmsi", as: "plirofories" }},
+                              { $ project: { "speedoverground": 1, "lon": 1,
+"lat": 1, "plirofories": { "shipname":1, "shiptype":1, "destination":1}}}])
+
+     ##   pws briskoume to onoma,ton tipo kai ton proorismo twn ploiwn, gnorizontas mono tin taxitita tou ploiou
+
+db.nari_dynamic.aggregate([{ $match:{ "speedoverground":15.3}},
+{ $lookup: { from: "nari_static", localField: "sourcemmsi", foreignField: "sourcemmsi", as: "plirofories"}},
+{ $project: {"speedoverground":1, "lon":1, "lat":1, "plirofories": {"destination":1,"shipname":1,"shiptype":1}}}])
+
+
+     ##   dinontas sintetagmenes vriskoyme ta stoixeia( ola ) kai ton proorismo ton ploion poy perasan ap tin perioxi
+
+db.nari_dynamic.aggregate([{ $match:{ "lon" : -4.773598000000001, "lat" : 48.04535}},
+{ $lookup: { from: "nari_static", localField: "sourcemmsi", foreignField: "sourcemmsi", as: "plirofories"}},
+{ $project: {"speedoverground":1, "lon":1, "lat":1, "plirofories": {"destination":1,"shipname":1,"shiptype":1}}}])
+
+
+     ## DIMIOURGIA INDEX KAI EKTELESI QUERY ME KAI XWRIS INDEX ( VRISKOUME EXECUTION TIME 4 KAI 14 mSEC ANTISTOIXA)
+
+db.nari_dynamic.createIndex({"lon":1, "lat":1})
+db.nari_dynamic.dropIndex({"lon":1, "lat":1})
+db.nari_dynamic.getIndexes()
+
+db.nari_dynamic.find({$and: [{"lon": {$gte:-4.497, $lte:-4.496}}, {"lat":{$gt:48.382, $lte:48.383}}]}).explain("executionStats")
+
+     ## REPLICATION 
+
+dbpath =C:\data1\db\path
+logpath=C:\data1\log\mongod.log\
+port=27020
+
+dbpath =C:\data2\db\path
+logpath=C:\data2\log\mongod.log\
+port=27021
+
+   
+mongod --dbpath "C:\Program Files\MongoDB\Server\4.0\data" --logpath "C:\Program Files\MongoDB\Server\4.0\log\mongod.log" --port 27017 --storageEngine=wiredTiger --journal --replSet r2schools 
+mongod --dbpath "C:\data1\db" --logpath "C:\data1\log\mongod.log" --port 27020 --storageEngine=wiredTiger --journal --replSet r2schools 
+mongod --dbpath "C:\data2\db" --logpath "C:\data2\log\mongod.log" --port 27021 --storageEngine=wiredTiger --journal --replSet r2schools 
+
+On Primary Server.
+rsconf={_id:r2schools,members:[{_id:0,host:"localhost:27017"}]} 
+rs.initiate(rsconf) 
+rs.add("localhost:27020") 
+rs.add("localhost:27021")
+rs.status() 
+
+On Secondary Servers 
+rs.slaveOk() 
+rs.status()
+
+rs.initiate(
+  {
+    _id : "r2schools",
+	configsvr : true,
+	members : [
+	  { _id : 0, host : "127.0.0.1: 27017},
+	  { _id : 1, host : "127.0.0.1: 27020},
+	  { _id : 2, host : "127.0.0.1: 27021}
+	  ]
+	 }
+)
+
+
+     ## SHARDING 
+
+mongos> use aisdata
+mongos> db.nari_dynamic.getShardDistribution()   ##epistrefei ta shards an yparxoun
+mongos> sh.enableSharding("aisdata")  ## epitrepei tin ektelesi tou sharding 
+mongos> sh.shardCollection("aidata.nari_dynamic", {"lon":1, "lat":1})   
+
+ 
